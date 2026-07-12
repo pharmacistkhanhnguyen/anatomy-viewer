@@ -189,18 +189,16 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 
 // ─── Setup ───
 const gltfLoader = new GLTFLoader();
-const GLB_BASE = 'models/glb/';
+const GLB_BASE = 'models/glb_hires/';
 
 const SYSTEMS = [
-  { file:'SkeletalSystem100_blender.glb', name:'Skeletal', key:'skeletal', color:'#eceff1', sc:'1' },
-  { file:'MuscularSystem100_blender.glb', name:'Muscular', key:'muscular', color:'#ef5350', sc:'2' },
-  { file:'CardioVascular41_blender.glb', name:'Cardio', key:'cardio', color:'#f44336', sc:'3' },
-  { file:'NervousSystem100_blender.glb', name:'Nervous', key:'nervous', color:'#ffeb3b', sc:'4' },
-  { file:'VisceralSystem100_blender.glb', name:'Visceral', key:'visceral', color:'#8bc34a', sc:'5' },
-  { file:'Joints100_blender.glb', name:'Joints', key:'joints', color:'#ce93d8', sc:null },
-  { file:'LymphoidOrgans100_blender.glb', name:'Lymphoid', key:'lymphoid', color:'#4dd0e1', sc:null },
-  { file:'Regions of human body100_blender.glb', name:'Regions', key:'regions', color:'#ffcc80', sc:null },
-  { file:'References100_blender.glb', name:'Refs', key:'refs', color:'#bcaaa4', sc:null },
+  { file:'SkeletalSystem_fullres.glb', name:'Skeletal', key:'skeletal', color:'#eceff1', sc:'1' },
+  { file:'MuscularSystem_fullres.glb', name:'Muscular', key:'muscular', color:'#ef5350', sc:'2' },
+  { file:'CardiovascularSystem_fullres.glb', name:'Cardio', key:'cardio', color:'#f44336', sc:'3' },
+  { file:'NervousSystem_fullres.glb', name:'Nervous', key:'nervous', color:'#ffeb3b', sc:'4' },
+  { file:'VisceralSystem_fullres.glb', name:'Visceral', key:'visceral', color:'#8bc34a', sc:'5' },
+  { file:'Joints_fullres.glb', name:'Joints', key:'joints', color:'#ce93d8', sc:null },
+  { file:'Regions_fullres.glb', name:'Regions', key:'regions', color:'#ffcc80', sc:null },
 ];
 
 // ─── Three.js ───
