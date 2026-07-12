@@ -84,7 +84,7 @@ const SYSTEMS=[
 ];
 
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x0d1117);scene.fog=new THREE.Fog(0x0d1117,5,20);
-const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.05,100);camera.position.set(0.5,0.2,3.5);camera.lookAt(0,-0.5,0);
+const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.05,100);camera.position.set(0,1,3);camera.lookAt(0,0.95,0);
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 // GPU detection
@@ -97,7 +97,7 @@ if(isSoftware) document.getElementById('gpu-warn').style.display='block';
 console.log('GPU:',gpuVendor,'-',gpuRenderer,isSoftware?'(SOFTWARE!)':'(OK)');
 
 const labelRenderer=new CSS2DRenderer();labelRenderer.setSize(innerWidth,innerHeight);labelRenderer.domElement.style.position='absolute';labelRenderer.domElement.style.top='0';labelRenderer.domElement.style.pointerEvents='none';document.getElementById('canvas-container').appendChild(labelRenderer.domElement);
-const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,-0.5,0);controls.enableDamping=true;controls.dampingFactor=0.08;controls.minDistance=0.2;controls.maxDistance=15;controls.maxPolarAngle=Math.PI;controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};controls.update();
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,0.95,0);controls.enableDamping=true;controls.dampingFactor=0.08;controls.minDistance=0.2;controls.maxDistance=15;controls.maxPolarAngle=Math.PI;controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};controls.update();
 scene.add(new THREE.AmbientLight(0x8899bb,3.5));
 const k=new THREE.DirectionalLight(0xffffff,5);k.position.set(5,8,6);scene.add(k);
 const f=new THREE.DirectionalLight(0x8899cc,2.5);f.position.set(-5,2,-3);scene.add(f);
@@ -119,8 +119,12 @@ function loadSys(sys){
   const row=document.querySelector(`.sys-row[data-k="${sys.key}"]`);if(row)row.classList.add('loading');
   document.getElementById('load-msg').textContent=`Loading ${sys.name}...`;
   return new Promise((res,rej)=>{gltfLoader.load(GLB_BASE+sys.file,(gltf)=>{
-    const g=new THREE.Group();g.name=sys.key;
-    gltf.scene.traverse(c=>{if(c.isMesh){c.userData={sys:sys.key,sname:sys.name,orig:c.name};c.material=(Array.isArray(c.material)?c.material:[c.material]).map(m=>{const mt=m.clone();mt.color=new THREE.Color(sys.color);mt.roughness=0.65;mt.metalness=0.08;mt.transparent=true;mt.opacity=0.88;return mt});if(c.material.length===1)c.material=c.material[0];g.add(c);allMeshEntries.push({mesh:c,sys:sys.key,name:c.name})}});
+    // Use the loaded scene as the system group. Do NOT reparent meshes into a new
+    // group inside traverse(): moving a node mid-traversal mutates the children
+    // array being iterated and throws "undefined.traverse". Modifying meshes in
+    // place is safe and preserves the original node transforms.
+    const g=gltf.scene;g.name=sys.key;
+    g.traverse(c=>{if(c.isMesh){c.userData={sys:sys.key,sname:sys.name,orig:c.name};c.material=(Array.isArray(c.material)?c.material:[c.material]).map(m=>{const mt=m.clone();mt.color=new THREE.Color(sys.color);mt.roughness=0.65;mt.metalness=0.08;mt.transparent=true;mt.opacity=0.88;return mt});if(c.material.length===1)c.material=c.material[0];allMeshEntries.push({mesh:c,sys:sys.key,name:c.name})}});
     scene.add(g);sysGroups[sys.key]=g;sysVisible[sys.key]=true;sysLoaded[sys.key]=true;
     if(row){row.classList.remove('loading');row.classList.add('on')}updateHud();res();
   },undefined,err=>{if(row)row.classList.remove('loading');rej(err)});
@@ -137,9 +141,17 @@ function toggleLabels(){labelsOn=!labelsOn;document.getElementById('btn-labels')
 const sInput=document.getElementById('search-input'),sResults=document.getElementById('search-results');let selIdx=-1;
 function filter(q){if(!q||q.length<2)return[];const lq=q.toLowerCase(),ret=[],seen=new Set();for(const s of structuresData.structures){if(s.name.toLowerCase().includes(lq)){const k=s.name+'|'+(s.side||'');if(!seen.has(k)){seen.add(k);ret.push(s)}}if(ret.length>=25)break}ret.sort((a,b)=>{const an=a.name.toLowerCase(),bn=b.name.toLowerCase();if(an===lq)return-1;if(bn===lq)return 1;if(an.startsWith(lq)!==bn.startsWith(lq))return bn.startsWith(lq)?1:-1;return an.length-bn.length});return ret}
 function renderResults(r){sResults.innerHTML='';if(!r.length){sResults.classList.remove('active');return}r.forEach((s,i)=>{const d=document.createElement('div');d.className='sr-item'+(i===0?' sel':'');d.innerHTML=`<span>${s.name}${s.side?` <span style="color:var(--text2);font-size:11px">(${s.side})</span>`:''}</span><span class="sr-tag">${s.system||'?'}</span>`;d.onclick=()=>select(s);sResults.appendChild(d)});sResults.classList.add('active');selIdx=0}
-function findMesh(s){const tn=s.name.toLowerCase();for(const e of allMeshEntries)if(e.name.toLowerCase().includes(tn))return e;return null}
+// Map a structure's `system` field (GLB base name, e.g. "CardioVascular41") to a
+// SYSTEMS key. Returns null when the structure has no system (~60% of entries do not).
+function sysKeyFor(s){if(!s.system)return null;const sys=SYSTEMS.find(x=>x.file.toLowerCase().startsWith(s.system.toLowerCase()));return sys?sys.key:null}
+// Prefer a mesh in the structure's own system, then fall back to any loaded system.
+function findMesh(s,preferKey){const tn=s.name.toLowerCase();if(preferKey){for(const e of allMeshEntries)if(e.sys===preferKey&&e.name.toLowerCase().includes(tn))return e}for(const e of allMeshEntries)if(e.name.toLowerCase().includes(tn))return e;return null}
 function doSelect(entry,s){const wp=new THREE.Vector3();entry.mesh.getWorldPosition(wp);if(selMesh&&selOrig){const m=Array.isArray(selMesh.material)?selMesh.material[0]:selMesh.material;if(m&&selOrig.em){m.emissive.copy(selOrig.em);m.emissiveIntensity=selOrig.ei||0}}const mat=Array.isArray(entry.mesh.material)?entry.mesh.material[0]:entry.mesh.material;if(mat){selOrig={em:mat.emissive?.clone()||new THREE.Color(0),ei:mat.emissiveIntensity||0};mat.emissive=new THREE.Color(0x58a6ff);mat.emissiveIntensity=0.8}selMesh=entry.mesh;flySrc={cp:camera.position.clone(),tg:controls.target.clone()};flyTgt={cp:wp.clone().add(new THREE.Vector3(0.2,0.15,0.4)),tg:wp};flyDur=0.7;flyT=0;const pi=document.getElementById('info');document.getElementById('info-name').textContent=s.name+(s.side?` (${s.side})`:'');document.getElementById('info-detail').textContent=s.system||'';pi.classList.add('on')}
-function select(s){sResults.classList.remove('active');sInput.value=s.name+(s.side?` (${s.side})`:'');sInput.blur();const entry=findMesh(s);if(!entry){sInput.style.borderColor='var(--red)';setTimeout(()=>sInput.style.borderColor='',600);return}if(!sysLoaded[entry.sys]){loadSys(SYSTEMS.find(x=>x.key===entry.sys)).then(()=>doSelect(entry,s));return}if(!sysVisible[entry.sys])toggleSys(entry.sys,true);doSelect(entry,s)}
+// Load the structure's own system first (if known and not yet loaded), THEN look up
+// the mesh. The old order called findMesh() before loading, so any structure in an
+// unloaded system returned null and flashed the red "not found" border — the branch
+// that loaded the system was unreachable because entry was always null first.
+function select(s){sResults.classList.remove('active');sInput.value=s.name+(s.side?` (${s.side})`:'');sInput.blur();const key=sysKeyFor(s);const finish=()=>{const entry=findMesh(s,key);if(!entry){sInput.style.borderColor='var(--red)';setTimeout(()=>sInput.style.borderColor='',600);return}if(!sysVisible[entry.sys])toggleSys(entry.sys,true);doSelect(entry,s)};if(key&&!sysLoaded[key]){loadSys(SYSTEMS.find(x=>x.key===key)).then(finish).catch(finish);return}finish()}
 
 sInput.addEventListener('input',()=>{selIdx=-1;renderResults(filter(sInput.value))});
 sInput.addEventListener('focus',()=>{if(sInput.value.length>=2)renderResults(filter(sInput.value))});
@@ -147,8 +159,8 @@ document.addEventListener('click',e=>{if(!e.target.closest('#search-wrap'))sResu
 document.getElementById('info-close').onclick=()=>document.getElementById('info').classList.remove('on');
 document.getElementById('btn-explode').onclick=toggleExplode;
 document.getElementById('btn-labels').onclick=toggleLabels;
-document.getElementById('btn-reset').onclick=()=>{flySrc={cp:camera.position.clone(),tg:controls.target.clone()};flyTgt={cp:new THREE.Vector3(0.5,0.2,3.5),tg:new THREE.Vector3(0,-0.5,0)};flyDur=0.8;flyT=0;document.getElementById('info').classList.remove('on')};
-window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'){if(e.key==='ArrowDown'){e.preventDefault();const items=sResults.querySelectorAll('.sr-item');if(items.length){selIdx=Math.min(selIdx+1,items.length-1);items.forEach((it,i)=>it.classList.toggle('sel',i===selIdx));items[selIdx]?.scrollIntoView({block:'nearest'})}}else if(e.key==='ArrowUp'){e.preventDefault();const items=sResults.querySelectorAll('.sr-item');if(items.length&&selIdx>=0){selIdx=Math.max(selIdx-1,0);items.forEach((it,i)=>it.classList.toggle('sel',i===selIdx));items[selIdx]?.scrollIntoView({block:'nearest'})}}else if(e.key==='Enter'&&sResults.classList.contains('active')){e.preventDefault();const r=filter(sInput.value);if(r[selIdx])select(r[selIdx])}else if(e.key==='Escape'){sResults.classList.remove('active');sInput.blur()}return}const sys=SYSTEMS.find(s=>s.sc===e.key);if(sys){toggleSys(sys.key);return}if(e.key==='0'){const all=Object.values(sysVisible).every(v=>v);Object.keys(sysVisible).forEach(k=>toggleSys(k,!all));return}if(e.key==='/'||e.key==='f'){e.preventDefault();sInput.focus();sInput.select();return}if(e.key==='e')toggleExplode();if(e.key==='l')toggleLabels();if(e.key==='Escape'){flySrc={cp:camera.position.clone(),tg:controls.target.clone()};flyTgt={cp:new THREE.Vector3(0.5,0.2,3.5),tg:new THREE.Vector3(0,-0.5,0)};flyDur=0.8;flyT=0;document.getElementById('info').classList.remove('on')}});
+document.getElementById('btn-reset').onclick=()=>{flySrc={cp:camera.position.clone(),tg:controls.target.clone()};flyTgt={cp:new THREE.Vector3(0,1,3),tg:new THREE.Vector3(0,0.95,0)};flyDur=0.8;flyT=0;document.getElementById('info').classList.remove('on')};
+window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'){if(e.key==='ArrowDown'){e.preventDefault();const items=sResults.querySelectorAll('.sr-item');if(items.length){selIdx=Math.min(selIdx+1,items.length-1);items.forEach((it,i)=>it.classList.toggle('sel',i===selIdx));items[selIdx]?.scrollIntoView({block:'nearest'})}}else if(e.key==='ArrowUp'){e.preventDefault();const items=sResults.querySelectorAll('.sr-item');if(items.length&&selIdx>=0){selIdx=Math.max(selIdx-1,0);items.forEach((it,i)=>it.classList.toggle('sel',i===selIdx));items[selIdx]?.scrollIntoView({block:'nearest'})}}else if(e.key==='Enter'&&sResults.classList.contains('active')){e.preventDefault();const r=filter(sInput.value);if(r[selIdx])select(r[selIdx])}else if(e.key==='Escape'){sResults.classList.remove('active');sInput.blur()}return}const sys=SYSTEMS.find(s=>s.sc===e.key);if(sys){toggleSys(sys.key);return}if(e.key==='0'){const all=Object.values(sysVisible).every(v=>v);Object.keys(sysVisible).forEach(k=>toggleSys(k,!all));return}if(e.key==='/'||e.key==='f'){e.preventDefault();sInput.focus();sInput.select();return}if(e.key==='e')toggleExplode();if(e.key==='l')toggleLabels();if(e.key==='Escape'){flySrc={cp:camera.position.clone(),tg:controls.target.clone()};flyTgt={cp:new THREE.Vector3(0,1,3),tg:new THREE.Vector3(0,0.95,0)};flyDur=0.8;flyT=0;document.getElementById('info').classList.remove('on')}});
 
 const tooltip=document.getElementById('tooltip');const raycaster=new THREE.Raycaster();const mouse=new THREE.Vector2();
 renderer.domElement.addEventListener('pointermove',e=>{mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;raycaster.setFromCamera(mouse,camera);const hits=raycaster.intersectObjects(allMeshEntries.map(e=>e.mesh),false);if(hits.length){const m=hits[0].object;tooltip.textContent=m.userData.orig||m.name;tooltip.style.left=(e.clientX+12)+'px';tooltip.style.top=(e.clientY-10)+'px';tooltip.classList.add('on')}else tooltip.classList.remove('on')});
