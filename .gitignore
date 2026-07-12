@@ -4,3 +4,5 @@ models/fbx/
 *.log
 CNAME
 models/glb/draco/
+models/glb/SkeletalSystem_simple.glb
+models/glb/SkeletalSystem_simple2.glb
