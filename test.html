@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>GLB Test</title>
+<style>body{margin:0;background:#111;color:#fff;font:14px monospace;overflow:hidden}
+#log{position:fixed;top:10px;left:10px;z-index:99;background:rgba(0,0,0,0.8);padding:10px;border-radius:8px;max-width:90vw;max-height:80vh;overflow-y:auto}
+</style></head>
+<body>
+<div id="log"></div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const log = document.getElementById('log');
+function L(msg) { log.innerHTML += msg + '<br>'; console.log(msg); }
+
+L('=== GLB Load Test ===');
+L('Three.js version: ' + THREE.REVISION);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222244);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0, 0.5, 2);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+
+// Bright lights
+scene.add(new THREE.AmbientLight(0xffffff, 3));
+scene.add(new THREE.DirectionalLight(0xffffff, 5));
+
+// Test: load SkeletalSystem100
+const loader = new GLTFLoader();
+const url = 'models/glb/SkeletalSystem100.glb';
+L('Loading: ' + url);
+
+const start = performance.now();
+loader.load(url,
+  (gltf) => {
+    const elapsed = ((performance.now() - start)/1000).toFixed(1);
+    L('✅ Loaded in ' + elapsed + 's');
+    
+    // Compute bounds
+    const box = new THREE.Box3();
+    gltf.scene.traverse(c => { if(c.isMesh) box.expandByObject(c); });
+    L('BoundingBox: min=' + box.min.toArray().map(v=>v.toFixed(4)).join(','));
+    L('BoundingBox: max=' + box.max.toArray().map(v=>v.toFixed(4)).join(','));
+    const size = box.getSize(new THREE.Vector3());
+    L('Size: ' + size.toArray().map(v=>v.toFixed(4)).join(','));
+    
+    // Scale to human size (~1.7m tall)
+    const targetHeight = 1.7;
+    const scaleFactor = targetHeight / Math.max(size.x, size.y, size.z);
+    L('Auto scale: ' + scaleFactor.toFixed(0) + 'x');
+    gltf.scene.scale.setScalar(scaleFactor);
+    
+    // Count meshes
+    let meshCount = 0;
+    gltf.scene.traverse(c => { if(c.isMesh) { meshCount++; 
+      c.material = new THREE.MeshStandardMaterial({color:0xeceff1, roughness:0.6, metalness:0.1});
+    }});
+    L('Meshes: ' + meshCount);
+    
+    // Center model
+    const center = box.getCenter(new THREE.Vector3());
+    gltf.scene.position.copy(center.clone().multiplyScalar(-scaleFactor));
+    
+    scene.add(gltf.scene);
+    L('✅ Added to scene');
+    
+    // Adjust camera
+    controls.target.copy(new THREE.Vector3(0, size.y * scaleFactor / 2, 0));
+    camera.position.set(0, size.y * scaleFactor / 2, size.z * scaleFactor * 1.5);
+    L('Camera: pos=' + camera.position.toArray().map(v=>v.toFixed(2)).join(','));
+    L('Target: ' + controls.target.toArray().map(v=>v.toFixed(2)).join(','));
+    L('');
+    L('🎉 DONE - model should be visible');
+    L('First 5 mesh names:');
+    gltf.scene.traverse(c => { if(c.isMesh && meshCount-- > meshCount-6) L('  ' + c.name); });
+  },
+  (progress) => {
+    if (progress.total > 0) {
+      L('Progress: ' + (progress.loaded/progress.total*100).toFixed(0) + '%');
+    }
+  },
+  (err) => {
+    L('❌ ERROR: ' + (err.message || err));
+    console.error(err);
+  }
+);
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
