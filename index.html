@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Anatomy 3D Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { 
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e; color: #eee; overflow: hidden; height: 100vh;
+  -webkit-tap-highlight-color: transparent;
+}
+#canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+
+#search-bar {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 100; width: min(90vw, 420px);
+}
+#search-input {
+  width: 100%; padding: 12px 16px; border-radius: 24px;
+  border: 2px solid rgba(255,255,255,0.15); background: rgba(20,20,40,0.92);
+  color: #fff; font-size: 15px; outline: none; backdrop-filter: blur(10px);
+  transition: border-color 0.2s; -webkit-appearance: none;
+}
+#search-input:focus { border-color: #4fc3f7; }
+#search-input::placeholder { color: rgba(255,255,255,0.4); }
+#search-results {
+  margin-top: 6px; background: rgba(20,20,40,0.95); border-radius: 12px;
+  max-height: 50vh; overflow-y: auto; display: none;
+  border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+}
+#search-results.active { display: block; }
+.search-item {
+  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; transition: background 0.15s;
+}
+.search-item:active, .search-item.selected { background: rgba(79,195,247,0.25); }
+.search-item .system-tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 8px;
+  background: rgba(255,255,255,0.1); color: #aaa; flex-shrink: 0; margin-left: 8px;
+}
+
+#info-panel {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(20,20,40,0.88); backdrop-filter: blur(12px);
+  padding: 8px 16px; border-radius: 16px; font-size: 13px;
+  display: none; align-items: center; gap: 10px; z-index: 100;
+  border: 1px solid rgba(255,255,255,0.1); max-width: 90vw;
+}
+#info-panel.active { display: flex; }
+#info-name { font-weight: 600; color: #4fc3f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#info-system { color: #888; font-size: 11px; flex-shrink: 0; }
+
+#system-toggles {
+  position: fixed; right: 8px; top: 50%; transform: translateY(-50%);
+  z-index: 100; display: flex; flex-direction: column; gap: 4px;
+}
+.sys-btn {
+  padding: 7px 10px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(20,20,40,0.75); color: #aaa; cursor: pointer;
+  font-size: 11px; white-space: nowrap; transition: all 0.2s;
+  backdrop-filter: blur(6px); text-align: center;
+  -webkit-tap-highlight-color: transparent; user-select: none;
+}
+.sys-btn:active { background: rgba(79,195,247,0.3); }
+.sys-btn.active { background: rgba(79,195,247,0.25); border-color: #4fc3f7; color: #fff; }
+.sys-btn.hidden { opacity: 0.3; }
+.sys-btn.loading { animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+
+#loading-overlay {
+  position: fixed; inset: 0; z-index: 200; display: flex;
+  align-items: center; justify-content: center; pointer-events: none;
+}
+#loading-overlay.done { display: none; }
+.loading-box {
+  background: rgba(20,20,40,0.92); backdrop-filter: blur(12px);
+  padding: 20px 32px; border-radius: 16px; text-align: center;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.spinner {
+  width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #4fc3f7; border-radius: 50%; animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#hud {
+  position: fixed; top: 12px; left: 12px;
+  background: rgba(20,20,40,0.6); backdrop-filter: blur(6px);
+  padding: 6px 10px; border-radius: 12px; font-size: 11px;
+  color: #888; z-index: 100; border: 1px solid rgba(255,255,255,0.08);
+}
+
+#mobile-hint {
+  position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(20,20,40,0.7); padding: 6px 12px; border-radius: 10px;
+  font-size: 11px; color: #666; z-index: 99; pointer-events: none;
+  transition: opacity 0.5s;
+}
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="loading-overlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <div style="color:#aaa;font-size:14px;">Loading viewer...</div>
+  </div>
+</div>
+
+<div id="search-bar">
+  <input type="text" id="search-input" placeholder="Search (e.g., kidney, heart)..." autocomplete="off" enterkeyhint="search">
+  <div id="search-results"></div>
+</div>
+
+<div id="info-panel">
+  <span id="info-name"></span>
+  <span id="info-system"></span>
+</div>
+
+<div id="system-toggles"></div>
+
+<div id="hud">
+  <span id="hud-text">9,155 structures</span>
+</div>
+
+<div id="mobile-hint">👆 Drag to rotate · Pinch to zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// ─── Draco setup ───
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
+dracoLoader.setDecoderConfig({ type: 'js' });
+
+const gltfLoader = new GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
+
+// ─── Configuration ───
+const GLB_BASE = 'models/glb/draco/';
+const SYSTEMS = [
+  { file: 'SkeletalSystem100.glb',   name: 'Skeletal',     key: 'SkeletalSystem100',    color: 0xeceff1, shortcut: '1' },
+  { file: 'MuscularSystem100.glb',   name: 'Muscular',     key: 'MuscularSystem100',    color: 0xef5350, shortcut: '2' },
+  { file: 'CardioVascular41.glb',    name: 'Cardio',       key: 'CardioVascular41',     color: 0x43a047, shortcut: '3' },
+  { file: 'NervousSystem100.glb',    name: 'Nervous',      key: 'NervousSystem100',     color: 0xffeb3b, shortcut: '4' },
+  { file: 'VisceralSystem100.glb',   name: 'Visceral',     key: 'VisceralSystem100',    color: 0x8bc34a, shortcut: '5' },
+  { file: 'Joints100.glb',           name: 'Joints',       key: 'Joints100',            color: 0xce93d8, shortcut: null },
+  { file: 'LymphoidOrgans100.glb',   name: 'Lymphoid',     key: 'LymphoidOrgans100',    color: 0x4dd0e1, shortcut: null },
+  { file: 'Regions of human body100.glb', name: 'Regions', key: 'Regions of human body100', color: 0xffcc80, shortcut: null },
+  { file: 'References100.glb',       name: 'Refs',         key: 'References100',        color: 0xbcaaa4, shortcut: null },
+];
+
+// ─── Three.js setup ───
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 15, 50);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 1.5, 8);
+camera.lookAt(0, 1, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.5;
+controls.maxDistance = 20;
+controls.maxPolarAngle = Math.PI;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+controls.update();
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x404060, 2.5));
+const keyLight = new THREE.DirectionalLight(0xffffff, 4);
+keyLight.position.set(5, 10, 7);
+scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0x8899cc, 2);
+fillLight.position.set(-5, 2, -3);
+scene.add(fillLight);
+const rimLight = new THREE.DirectionalLight(0xffffff, 1);
+rimLight.position.set(0, -1, 5);
+scene.add(rimLight);
+
+// Grid floor
+scene.add(new THREE.PolarGridHelper(6, 32, 24, 64, 0x333355, 0x222244));
+
+// ─── State ───
+const systemGroups = {};
+const systemVisibility = {};
+const systemLoaded = {};
+const allMeshes = [];
+let structuresData = { structures: [] };
+let structureLookup = {};
+let highlightedMesh = null;
+let highlightOriginal = null;
+
+// Fly-to animation state
+let flyTarget = null, flyStart = null, flyDuration = 0, flyElapsed = 0;
+
+// ─── Load structures ───
+fetch('structures.json')
+  .then(r => r.json())
+  .then(data => {
+    structuresData = data;
+    for (const s of data.structures) {
+      const key = s.name.toLowerCase();
+      if (!structureLookup[key]) structureLookup[key] = [];
+      structureLookup[key].push(s);
+    }
+  });
+
+// ─── Lazy load system ───
+function loadSystem(sysDef) {
+  if (systemLoaded[sysDef.key]) return Promise.resolve();
+  
+  const btn = document.querySelector(`.sys-btn[data-key="${sysDef.key}"]`);
+  if (btn) btn.classList.add('loading');
+  
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(
+      GLB_BASE + sysDef.file,
+      (gltf) => {
+        const group = new THREE.Group();
+        group.name = sysDef.key;
+        
+        gltf.scene.traverse((child) => {
+          if (child.isMesh) {
+            child.userData = { systemKey: sysDef.key, systemName: sysDef.name, originalName: child.name };
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            child.material = mats.map(m => {
+              const mat = m.clone();
+              mat.color = new THREE.Color(sysDef.color);
+              mat.roughness = 0.7; mat.metalness = 0.05;
+              mat.transparent = true; mat.opacity = 0.85;
+              return mat;
+            });
+            if (child.material.length === 1) child.material = child.material[0];
+            group.add(child);
+            allMeshes.push({ mesh: child, systemKey: sysDef.key, name: child.name });
+          }
+        });
+        
+        scene.add(group);
+        systemGroups[sysDef.key] = group;
+        systemVisibility[sysDef.key] = true;
+        systemLoaded[sysDef.key] = true;
+        
+        document.getElementById('hud-text').textContent = 
+          `${structuresData.total.toLocaleString()} structures · ${allMeshes.length.toLocaleString()} meshes`;
+        if (btn) { btn.classList.remove('loading'); btn.classList.add('active'); }
+        resolve();
+      },
+      undefined,
+      (err) => { if (btn) btn.classList.remove('loading'); reject(err); }
+    );
+  });
+}
+
+// ─── System toggle ───
+function toggleSystem(key, force) {
+  const sysDef = SYSTEMS.find(s => s.key === key);
+  if (!sysDef) return;
+  
+  const newState = force !== undefined ? force : !systemVisibility[key];
+  
+  if (newState && !systemLoaded[key]) {
+    // Load on demand
+    loadSystem(sysDef).then(() => {
+      updateToggleButton(key, true);
+    }).catch(() => {
+      updateToggleButton(key, false);
+    });
+    return;
+  }
+  
+  const group = systemGroups[key];
+  if (group) group.visible = newState;
+  systemVisibility[key] = newState;
+  updateToggleButton(key, newState);
+}
+
+function updateToggleButton(key, active) {
+  const btn = document.querySelector(`.sys-btn[data-key="${key}"]`);
+  if (btn) {
+    btn.classList.toggle('active', active);
+    btn.classList.toggle('hidden', !active);
+  }
+}
+
+function createSystemToggles() {
+  const container = document.getElementById('system-toggles');
+  for (const sys of SYSTEMS) {
+    const btn = document.createElement('button');
+    btn.className = 'sys-btn';
+    btn.dataset.key = sys.key;
+    btn.textContent = sys.name + (sys.shortcut ? ` ${sys.shortcut}` : '');
+    btn.addEventListener('click', () => toggleSystem(sys.key));
+    container.appendChild(btn);
+  }
+}
+
+// ─── Search ───
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+let selectedIndex = -1;
+
+function filterStructures(query) {
+  if (!query || query.length < 2) return [];
+  const q = query.toLowerCase();
+  const results = [];
+  const seen = new Set();
+  for (const s of structuresData.structures) {
+    if (s.name.toLowerCase().includes(q)) {
+      const key = s.name + '|' + (s.side || '');
+      if (!seen.has(key)) { seen.add(key); results.push(s); }
+    }
+    if (results.length >= 20) break;
+  }
+  results.sort((a, b) => {
+    const aN = a.name.toLowerCase(), bN = b.name.toLowerCase();
+    if (aN === q) return -1; if (bN === q) return 1;
+    if (aN.startsWith(q) !== bN.startsWith(q)) return bN.startsWith(q) ? 1 : -1;
+    return aN.length - bN.length;
+  });
+  return results;
+}
+
+function renderSearchResults(results) {
+  searchResults.innerHTML = '';
+  if (!results.length) { searchResults.classList.remove('active'); return; }
+  for (let i = 0; i < results.length; i++) {
+    const s = results[i];
+    const div = document.createElement('div');
+    div.className = 'search-item' + (i === 0 ? ' selected' : '');
+    div.innerHTML = `<span>${s.name}${s.side ? ` <span style="color:#888;font-size:11px">(${s.side})</span>` : ''}</span><span class="system-tag">${s.system||'?'}</span>`;
+    div.addEventListener('click', () => selectStructure(s));
+    div.addEventListener('touchend', (e) => { e.preventDefault(); selectStructure(s); });
+    searchResults.appendChild(div);
+  }
+  searchResults.classList.add('active');
+  selectedIndex = 0;
+}
+
+// ─── Find mesh ───
+function findMeshForStructure(structure) {
+  const targetName = structure.name.toLowerCase();
+  for (const entry of allMeshes) {
+    if (entry.name.toLowerCase().includes(targetName)) return entry;
+  }
+  return null;
+}
+
+// ─── Highlight ───
+function highlightMesh(mesh) {
+  if (highlightedMesh && highlightOriginal && highlightedMesh.material) {
+    const m = Array.isArray(highlightedMesh.material) ? highlightedMesh.material[0] : highlightedMesh.material;
+    if (m && highlightOriginal.emissive) {
+      m.emissive.copy(highlightOriginal.emissive);
+      m.emissiveIntensity = highlightOriginal.intensity || 0;
+    }
+  }
+  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  if (mat) {
+    highlightOriginal = { emissive: mat.emissive?.clone() || new THREE.Color(0), intensity: mat.emissiveIntensity || 0 };
+    mat.emissive = new THREE.Color(0x4fc3f7);
+    mat.emissiveIntensity = 0.7;
+  }
+  highlightedMesh = mesh;
+}
+
+// ─── Select structure ───
+function selectStructure(structure) {
+  searchResults.classList.remove('active');
+  searchInput.value = structure.name + (structure.side ? ` (${structure.side})` : '');
+  searchInput.blur();
+  
+  const entry = findMeshForStructure(structure);
+  if (!entry) {
+    searchInput.style.borderColor = '#ef5350';
+    setTimeout(() => searchInput.style.borderColor = '', 800);
+    return;
+  }
+  
+  // Ensure system is loaded and visible
+  if (!systemLoaded[entry.systemKey]) {
+    loadSystem(SYSTEMS.find(s => s.key === entry.systemKey)).then(() => {
+      doSelect(entry, structure);
+    });
+    return;
+  }
+  if (!systemVisibility[entry.systemKey]) toggleSystem(entry.systemKey, true);
+  doSelect(entry, structure);
+}
+
+function doSelect(entry, structure) {
+  const worldPos = new THREE.Vector3();
+  entry.mesh.getWorldPosition(worldPos);
+  highlightMesh(entry.mesh);
+  
+  flyStart = { camPos: camera.position.clone(), target: controls.target.clone() };
+  flyTarget = { camPos: worldPos.clone().add(new THREE.Vector3(0.3, 0.2, 0.5)), target: worldPos };
+  flyDuration = 0.8; flyElapsed = 0;
+  
+  const panel = document.getElementById('info-panel');
+  document.getElementById('info-name').textContent = structure.name + (structure.side ? ` (${structure.side})` : '');
+  document.getElementById('info-system').textContent = structure.system || '';
+  panel.classList.add('active');
+}
+
+// ─── Keyboard ───
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') {
+    if (e.key === 'ArrowDown') { e.preventDefault(); const items = searchResults.querySelectorAll('.search-item'); if (items.length) { selectedIndex = Math.min(selectedIndex+1, items.length-1); items.forEach((it,i) => it.classList.toggle('selected', i===selectedIndex)); items[selectedIndex]?.scrollIntoView({block:'nearest'}); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); const items = searchResults.querySelectorAll('.search-item'); if (items.length && selectedIndex>=0) { selectedIndex = Math.max(selectedIndex-1, 0); items.forEach((it,i) => it.classList.toggle('selected', i===selectedIndex)); items[selectedIndex]?.scrollIntoView({block:'nearest'}); } }
+    else if (e.key === 'Enter' && searchResults.classList.contains('active')) { e.preventDefault(); const results = filterStructures(searchInput.value); if (results[selectedIndex]) selectStructure(results[selectedIndex]); }
+    else if (e.key === 'Escape') { searchResults.classList.remove('active'); searchInput.blur(); }
+    return;
+  }
+  const sys = SYSTEMS.find(s => s.shortcut === e.key);
+  if (sys) { toggleSystem(sys.key); return; }
+  if (e.key === '0') { const allVis = Object.values(systemVisibility).every(v => v); Object.keys(systemVisibility).forEach(k => toggleSystem(k, !allVis)); return; }
+  if (e.key === '/' || e.key === 'f') { e.preventDefault(); searchInput.focus(); searchInput.select(); return; }
+  if (e.key === 'Escape') { flyStart = { camPos: camera.position.clone(), target: controls.target.clone() }; flyTarget = { camPos: new THREE.Vector3(0, 1.5, 8), target: new THREE.Vector3(0, 1, 0) }; flyDuration = 1.0; flyElapsed = 0; document.getElementById('info-panel').classList.remove('active'); }
+});
+
+// ─── Search UI events ───
+searchInput.addEventListener('input', () => { selectedIndex = -1; renderSearchResults(filterStructures(searchInput.value)); });
+searchInput.addEventListener('focus', () => { if (searchInput.value.length >= 2) renderSearchResults(filterStructures(searchInput.value)); });
+document.addEventListener('click', (e) => { if (!e.target.closest('#search-bar')) searchResults.classList.remove('active'); });
+document.addEventListener('touchstart', (e) => { if (!e.target.closest('#search-bar')) searchResults.classList.remove('active'); });
+
+// ─── Hide mobile hint after interaction ───
+let hintHidden = false;
+renderer.domElement.addEventListener('pointerdown', () => {
+  if (!hintHidden) { document.getElementById('mobile-hint').style.opacity = '0'; hintHidden = true; }
+});
+
+// ─── Render loop ───
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.1, 0.016);
+  
+  if (flyTarget) {
+    flyElapsed += dt;
+    const t = Math.min(flyElapsed / flyDuration, 1.0);
+    const ease = t < 0.5 ? 2*t*t : -1 + (4-2*t)*t;
+    camera.position.lerpVectors(flyStart.camPos, flyTarget.camPos, ease);
+    controls.target.lerpVectors(flyStart.target, flyTarget.target, ease);
+    if (t >= 1.0) flyTarget = null;
+  }
+  
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Init ───
+createSystemToggles();
+
+// Start loading skeleton by default (shows something immediately)
+loadSystem(SYSTEMS[0]).then(() => {
+  document.getElementById('loading-overlay').classList.add('done');
+  // Also load visceral system so kidney is findable
+  loadSystem(SYSTEMS[4]);
+}).catch(() => {
+  document.getElementById('loading-overlay').classList.add('done');
+});
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

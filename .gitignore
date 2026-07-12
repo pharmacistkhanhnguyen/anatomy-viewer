@@ -1,0 +1,7 @@
+models/fbx/
+models/glb/*.glb
+!models/glb/draco/*.glb
+*.py
+*.zip
+*.log
+CNAME
