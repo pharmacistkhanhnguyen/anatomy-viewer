@@ -119,8 +119,12 @@ function loadSys(sys){
   const row=document.querySelector(`.sys-row[data-k="${sys.key}"]`);if(row)row.classList.add('loading');
   document.getElementById('load-msg').textContent=`Loading ${sys.name}...`;
   return new Promise((res,rej)=>{gltfLoader.load(GLB_BASE+sys.file,(gltf)=>{
-    const g=new THREE.Group();g.name=sys.key;
-    gltf.scene.traverse(c=>{if(c.isMesh){c.userData={sys:sys.key,sname:sys.name,orig:c.name};c.material=(Array.isArray(c.material)?c.material:[c.material]).map(m=>{const mt=m.clone();mt.color=new THREE.Color(sys.color);mt.roughness=0.65;mt.metalness=0.08;mt.transparent=true;mt.opacity=0.88;return mt});if(c.material.length===1)c.material=c.material[0];g.add(c);allMeshEntries.push({mesh:c,sys:sys.key,name:c.name})}});
+    // Use the loaded scene as the system group. Do NOT reparent meshes into a new
+    // group inside traverse(): moving a node mid-traversal mutates the children
+    // array being iterated and throws "undefined.traverse". Modifying meshes in
+    // place is safe and preserves the original node transforms.
+    const g=gltf.scene;g.name=sys.key;
+    g.traverse(c=>{if(c.isMesh){c.userData={sys:sys.key,sname:sys.name,orig:c.name};c.material=(Array.isArray(c.material)?c.material:[c.material]).map(m=>{const mt=m.clone();mt.color=new THREE.Color(sys.color);mt.roughness=0.65;mt.metalness=0.08;mt.transparent=true;mt.opacity=0.88;return mt});if(c.material.length===1)c.material=c.material[0];allMeshEntries.push({mesh:c,sys:sys.key,name:c.name})}});
     scene.add(g);sysGroups[sys.key]=g;sysVisible[sys.key]=true;sysLoaded[sys.key]=true;
     if(row){row.classList.remove('loading');row.classList.add('on')}updateHud();res();
   },undefined,err=>{if(row)row.classList.remove('loading');rej(err)});
