@@ -144,18 +144,12 @@ body {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
-// ─── Draco setup ───
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
-dracoLoader.setDecoderConfig({ type: 'js' });
-
+// ─── GLTF Loader (no Draco - using original GLB) ───
 const gltfLoader = new GLTFLoader();
-gltfLoader.setDRACOLoader(dracoLoader);
 
 // ─── Configuration ───
-const GLB_BASE = 'models/glb/draco/';
+const GLB_BASE = 'models/glb/';
 const SYSTEMS = [
   { file: 'SkeletalSystem100.glb',   name: 'Skeletal',     key: 'SkeletalSystem100',    color: 0xeceff1, shortcut: '1' },
   { file: 'MuscularSystem100.glb',   name: 'Muscular',     key: 'MuscularSystem100',    color: 0xef5350, shortcut: '2' },
